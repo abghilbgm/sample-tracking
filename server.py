@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime
 from http import HTTPStatus
@@ -536,10 +537,16 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    global DB_PATH
+    # Allow cloud hosts to mount a persistent volume and point SQLite there.
+    db_override = (os.getenv("SAMPLE_TRACKING_DB_PATH") or "").strip()
+    if db_override:
+        DB_PATH = Path(db_override)
     init_db()
-    port = 8000
-    print(f"Sample Tracking app running on http://127.0.0.1:{port}")
-    ThreadingHTTPServer(("127.0.0.1", port), AppHandler).serve_forever()
+    host = (os.getenv("HOST") or "0.0.0.0").strip()
+    port = int(os.getenv("PORT") or "8000")
+    print(f"Sample Tracking app running on http://{host}:{port}")
+    ThreadingHTTPServer((host, port), AppHandler).serve_forever()
 
 
 if __name__ == "__main__":
