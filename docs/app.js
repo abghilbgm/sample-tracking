@@ -6,6 +6,7 @@ const state = {
   selectedLotId: null,
   selectedInventoryLotId: null,
   selectedDispatchId: null,
+  pendingScrollTo: "",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -118,8 +119,9 @@ function renderTable(container, columns, rows, options = {}) {
     return `<tr class="${selected}" data-row-id="${rowId}">${cells}</tr>`;
   }).join("");
 
+  const wrapClass = options.onSelect ? "table-wrap table-selectable" : "table-wrap";
   container.innerHTML = `
-    <div class="table-wrap">
+    <div class="${wrapClass}">
       <table>
         <thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join("")}</tr></thead>
         <tbody>${body}</tbody>
@@ -238,23 +240,32 @@ async function loadDashboard() {
   }
 
   applyAccessUI();
+
+  if (state.pendingScrollTo && window.matchMedia("(max-width: 900px)").matches) {
+    const el = document.querySelector(state.pendingScrollTo);
+    state.pendingScrollTo = "";
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 async function selectLot(id) {
   state.selectedLotId = id;
   $("#analysis-trigger").disabled = false;
+  state.pendingScrollTo = "#analysis-context";
   await loadDashboard();
 }
 
 async function selectInventoryLot(id) {
   state.selectedInventoryLotId = id;
   $("#dispatch-trigger").disabled = false;
+  state.pendingScrollTo = "#dispatch-context";
   await loadDashboard();
 }
 
 async function selectDispatch(id) {
   state.selectedDispatchId = id;
   $("#feedback-trigger").disabled = false;
+  state.pendingScrollTo = "#feedback-context";
   await loadDashboard();
 }
 

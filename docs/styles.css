@@ -26,6 +26,7 @@ body{
     radial-gradient(circle at 80% -20%, rgba(29,78,216,.10), transparent 38%),
     linear-gradient(180deg,#fff 0%, #fbfcff 70%, #fff 100%);
   line-height:1.5;
+  -webkit-text-size-adjust: 100%;
 }
 
 .shell{width:min(1280px, calc(100vw - 32px)); margin:24px auto 48px; isolation:isolate}
@@ -200,6 +201,7 @@ button{
   letter-spacing:.04em;
   cursor:pointer;
   box-shadow:0 12px 28px rgba(50,108,229,.18);
+  touch-action: manipulation;
 }
 button:hover:not(:disabled){
   transform:translateY(-1px);
@@ -235,7 +237,7 @@ textarea{min-height:96px; resize:vertical}
 .empty-state{color:var(--muted); padding:10px 0}
 
 /* Tables */
-.table-wrap{border-radius:calc(var(--r) + 6px); overflow:hidden}
+.table-wrap{border-radius:calc(var(--r) + 6px); overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch}
 table{width:100%; border-collapse:collapse; font-size:14px}
 th,td{padding:14px 12px; border-bottom:1px solid rgba(15,23,42,.10); text-align:left; vertical-align:top}
 th{
@@ -245,9 +247,10 @@ th{
   color:#64748b;
   background:#fff;
 }
-tbody tr{cursor:pointer}
 tbody tr:nth-child(2n) td{background:rgba(2,6,23,.02)}
-tbody tr:hover, tbody tr.selected{background:rgba(50,108,229,.08)}
+.table-selectable tbody tr{cursor:pointer}
+.table-selectable tbody tr:hover td,
+.table-selectable tbody tr.selected td{background:rgba(50,108,229,.08)}
 .badge{
   display:inline-flex; align-items:center;
   padding:4px 10px;
@@ -266,6 +269,8 @@ tbody tr:hover, tbody tr.selected{background:rgba(50,108,229,.08)}
 /* Dialogs */
 dialog{
   width:min(720px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
   border-radius:18px;
   padding:0;
   box-shadow:var(--shadow2);
@@ -387,4 +392,36 @@ label{display:grid; gap:8px; font-size:14px; font-weight:700}
   .access-controls{display:grid; gap:10px; justify-items:start}
   .login-card{padding:24px}
   .login-card--google{padding: 36px 22px 28px}
+}
+
+@media (max-width: 520px){
+  .shell{width:calc(100vw - 20px); margin:12px auto 28px}
+  .hero{padding:18px}
+  .panel{padding:16px}
+  .card, .hero-card{padding:14px}
+  .subtitle{font-size:1rem}
+
+  .brand-mark{width:42px; height:42px; border-radius:12px}
+  .access-controls{width:100%}
+  .session-badge{width:100%; justify-content:flex-start}
+
+  .panel-head, .card-head, .modal-head{align-items:flex-start; flex-direction:column}
+  .panel-head > button{width:100%}
+  .card-head > button{width:100%}
+
+  th,td{padding:12px 10px}
+  table{font-size:13px}
+
+  dialog{
+    width:100vw;
+    max-width:none;
+    height:100vh;
+    max-height:none;
+    border-radius:0;
+  }
+  .modal-form{padding:14px}
+  .toggle-row{padding-top:0}
+
+  .login-shell--google{padding:24px 16px}
+  .login-card--google{padding: 30px 18px 22px}
 }
