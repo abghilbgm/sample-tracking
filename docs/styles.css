@@ -266,6 +266,49 @@ tbody tr:nth-child(2n) td{background:rgba(2,6,23,.02)}
 .badge.bad{background:rgba(185,28,28,.10); color:var(--bad)}
 .inline-select{width:100%}
 
+/* Mobile card rows (used instead of tables on small screens) */
+.row-cards{display:grid; gap:12px}
+.row-card{
+  width:100%;
+  text-align:left;
+  border:1px solid var(--line);
+  background:var(--surface);
+  border-radius:calc(var(--r) + 6px);
+  padding:12px;
+  box-shadow: none;
+}
+button.row-card{
+  cursor:pointer;
+  background: var(--surface);
+  color: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+}
+button.row-card:hover:not(:disabled){
+  transform:none;
+  box-shadow:none;
+  border-color: var(--line2);
+}
+.row-card.selected{
+  border-color: rgba(50,108,229,.35);
+  box-shadow: 0 0 0 4px rgba(50,108,229,.10);
+}
+.row-grid{display:grid; gap:10px}
+.kv{
+  display:grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap:10px;
+  align-items:start;
+}
+.kv .k{
+  color:var(--muted);
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:900;
+}
+.kv .v{min-width:0; overflow-wrap:anywhere}
+
 /* Dialogs */
 dialog{
   width:min(720px, calc(100vw - 24px));
@@ -411,6 +454,7 @@ label{display:grid; gap:8px; font-size:14px; font-weight:700}
 
   th,td{padding:12px 10px}
   table{font-size:13px}
+  .kv{grid-template-columns: 96px minmax(0, 1fr); gap:8px}
 
   dialog{
     width:100vw;

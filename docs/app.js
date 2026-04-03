@@ -20,6 +20,10 @@ function resolveApiUrl(path) {
   return path;
 }
 
+function isSmallScreen() {
+  return window.matchMedia("(max-width: 520px)").matches;
+}
+
 function isGitHubPages() {
   return /github\.io$/i.test(location.hostname);
 }
@@ -105,6 +109,40 @@ function renderSessionBadge() {
 function renderTable(container, columns, rows, options = {}) {
   if (!rows.length) {
     container.innerHTML = `<div class="table-wrap"><div class="empty-state">${options.empty || "No rows found."}</div></div>`;
+    return;
+  }
+
+  if (isSmallScreen() && options.layout !== "table") {
+    const selectedId = options.selectedId;
+    const selectable = Boolean(options.onSelect);
+    const cards = rows.map((row) => {
+      const rowId = row.id ?? row.dispatch_id;
+      const selected = selectedId && rowId === selectedId ? "selected" : "";
+      const cardTag = selectable ? "button" : "div";
+      const attributes = selectable
+        ? `type="button" class="row-card ${selected}" data-row-id="${rowId}"`
+        : `class="row-card ${selected}"`;
+
+      const fields = columns.map((column) => {
+        const value = typeof column.render === "function" ? column.render(row) : row[column.key] ?? "";
+        if (value === "" || value == null) return "";
+        return `<div class="kv"><div class="k">${column.label}</div><div class="v">${value}</div></div>`;
+      }).filter(Boolean).join("");
+
+      return `
+        <${cardTag} ${attributes}>
+          <div class="row-grid">${fields}</div>
+        </${cardTag}>
+      `;
+    }).join("");
+
+    container.innerHTML = `<div class="row-cards">${cards}</div>`;
+
+    if (options.onSelect) {
+      container.querySelectorAll("[data-row-id]").forEach((rowEl) => {
+        rowEl.addEventListener("click", () => options.onSelect(Number(rowEl.dataset.rowId)));
+      });
+    }
     return;
   }
 
@@ -292,32 +330,25 @@ async function loadDispatches(lotId) {
     container.innerHTML = `<div class="table-wrap"><div class="empty-state">No shipments logged yet.</div></div>`;
     return;
   }
-  container.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Dispatch</th><th>Customer</th><th>Qty</th><th>Courier</th><th>AWB</th><th>Date</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-          ${dispatches.map((row) => `
-            <tr>
-              <td>${row.id}</td>
-              <td>${row.customer_name}</td>
-              <td>${row.quantity_sent}</td>
-              <td>${row.courier_name}</td>
-              <td>${row.awb_number}</td>
-              <td>${new Date(row.dispatch_date).toLocaleDateString()}</td>
-              <td>
-                <select class="inline-select" data-dispatch-id="${row.id}">
-                  ${["Dispatched", "In-Transit", "Delivered"].map((status) => `<option ${status === row.delivery_status ? "selected" : ""}>${status}</option>`).join("")}
-                </select>
-              </td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+
+  const statusOptions = (row) => ["Dispatched", "In-Transit", "Delivered"].map((status) => `<option ${status === row.delivery_status ? "selected" : ""}>${status}</option>`).join("");
+  renderTable(container, [
+    { label: "Dispatch", key: "id" },
+    { label: "Customer", key: "customer_name" },
+    { label: "Qty", key: "quantity_sent" },
+    { label: "Courier", key: "courier_name" },
+    { label: "AWB", key: "awb_number" },
+    { label: "Date", render: (r) => new Date(r.dispatch_date).toLocaleDateString() },
+    {
+      label: "Status",
+      render: (r) => `
+        <select class="inline-select" data-dispatch-id="${r.id}">
+          ${statusOptions(r)}
+        </select>
+      `,
+    },
+  ], dispatches, { layout: "auto" });
+
   container.querySelectorAll(".inline-select").forEach((select) => {
     select.addEventListener("change", async () => {
       await api("/api/dispatch-status", {
