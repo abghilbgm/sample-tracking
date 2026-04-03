@@ -29,6 +29,22 @@ Demo users (editable in `server.py`):
 
 The app uses a local SQLite database file: `sample_tracking.db`.
 
+## GitHub Pages (frontend)
+
+GitHub Pages can host only static files (the UI). The backend API + SQLite must
+run elsewhere (Railway/Render/etc).
+
+1. Deploy the backend (e.g. Railway) and note its public URL.
+2. Edit `docs/config.js` and set `window.API_BASE_URL` to that backend origin.
+3. Enable GitHub Pages for this repo:
+   - Settings → Pages → **Deploy from a branch**
+   - Branch: `main`
+   - Folder: `/docs`
+4. If the UI is on GitHub Pages and the API is on Railway, set a CORS allowlist
+   in your backend environment:
+   - `CORS_ALLOW_ORIGINS=https://<your-username>.github.io`
+   - (or `CORS_ALLOW_ORIGINS=*` for quick demos)
+
 ## Deploy (Render)
 
 This repo includes `render.yaml` and a `Dockerfile`.

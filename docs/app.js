@@ -10,8 +10,29 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+const API_BASE_URL = String(window.API_BASE_URL || "").trim().replace(/\/+$/, "");
+
+function resolveApiUrl(path) {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (API_BASE_URL) return `${API_BASE_URL}${path}`;
+  return path;
+}
+
+function isGitHubPages() {
+  return /github\.io$/i.test(location.hostname);
+}
+
+function appHomeUrl() {
+  return new URL("./", location.href).toString();
+}
+
+function loginUrl() {
+  return new URL("login.html", appHomeUrl()).toString();
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(resolveApiUrl(path), {
     headers: {
       "Content-Type": "application/json",
       ...(state.token ? { "X-Auth-Token": state.token } : {}),
@@ -45,7 +66,7 @@ function hasAccess(zone) {
 function showLogin(message = "") {
   // Login is a separate page now.
   if (!location.pathname.endsWith("/login.html")) {
-    location.replace("/login.html");
+    location.replace(loginUrl());
     return;
   }
   const err = $("#login-error");
@@ -69,7 +90,7 @@ window.addEventListener("unhandledrejection", (event) => {
 function showAppShell() {
   // App shell is `/` now.
   if (location.pathname.endsWith("/login.html")) {
-    location.replace("/");
+    location.replace(appHomeUrl());
     return;
   }
 }
@@ -349,7 +370,7 @@ function bindForms() {
         });
         state.token = result.token;
         localStorage.setItem("sample_tracking_token", state.token);
-        location.assign("/");
+        location.assign(appHomeUrl());
       } catch (error) {
         if (err) err.textContent = error.message;
       } finally {
@@ -420,7 +441,7 @@ function bindForms() {
     state.selectedInventoryLotId = null;
     state.selectedDispatchId = null;
     localStorage.removeItem("sample_tracking_token");
-    location.assign("/login.html");
+    location.assign(loginUrl());
   });
 }
 
@@ -446,10 +467,14 @@ async function restoreSession() {
 async function init() {
   bindModalButtons();
   bindForms();
+  if (isGitHubPages() && !API_BASE_URL) {
+    showLogin("Set window.API_BASE_URL in config.js to your Railway backend URL.");
+    return;
+  }
   // Keep `/login.html` isolated: no dashboard loads, no page redirects that can
   // continue running against the login DOM and surface scary JS errors.
   if (location.pathname.endsWith("/login.html")) {
-    if (state.token) location.replace("/");
+    if (state.token) location.replace(appHomeUrl());
     return;
   }
 

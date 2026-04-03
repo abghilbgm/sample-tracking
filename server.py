@@ -13,7 +13,9 @@ from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).parent
-STATIC_DIR = ROOT / "static"
+# `docs/` doubles as the GitHub Pages root and the assets directory for the
+# Python server.
+STATIC_DIR = ROOT / "docs"
 DB_PATH = ROOT / "sample_tracking.db"
 ROLES = {"admin", "quality", "logistics", "marketing"}
 USERS = {
@@ -133,6 +135,29 @@ def can_access(role: str, zone: str) -> bool:
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "SampleTracking/1.0"
 
+    def end_headers(self) -> None:
+        self.maybe_add_cors_headers()
+        super().end_headers()
+
+    def maybe_add_cors_headers(self) -> None:
+        allowed = (os.getenv("CORS_ALLOW_ORIGINS") or "").strip()
+        origin = (self.headers.get("Origin") or "").strip()
+        if not allowed or not origin:
+            return
+
+        if allowed == "*":
+            self.send_header("Access-Control-Allow-Origin", "*")
+        else:
+            allowed_set = {item.strip() for item in allowed.split(",") if item.strip()}
+            if origin not in allowed_set:
+                return
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
+        self.send_header("Access-Control-Max-Age", "600")
+
     @property
     def current_role(self) -> str:
         return normalize_role((self.current_user or {}).get("role"))
@@ -187,6 +212,15 @@ class AppHandler(BaseHTTPRequestHandler):
         if not self.require_auth():
             return
         self.handle_api_patch(parsed.path, body)
+
+    def do_OPTIONS(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/"):
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self.end_headers()
+            return
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.end_headers()
 
     def log_message(self, fmt: str, *args) -> None:
         return
