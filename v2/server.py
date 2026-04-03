@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS lots (
   product_name TEXT NOT NULL,
   initial_quantity REAL NOT NULL CHECK(initial_quantity >= 0),
   unit_measure TEXT NOT NULL,
-  npd_project_ref TEXT DEFAULT '',
+  project_ref TEXT DEFAULT '',
   notes TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'Draft',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -97,20 +97,37 @@ def query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict[st
     return dict(row) if row else None
 
 
+def migrate_db(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(lots)").fetchall()}
+    has_legacy = "npd_project_ref" in columns
+    if "project_ref" not in columns and has_legacy:
+        conn.execute("ALTER TABLE lots ADD COLUMN project_ref TEXT DEFAULT ''")
+        columns.add("project_ref")
+    if "project_ref" in columns and has_legacy:
+        conn.execute(
+            """
+            UPDATE lots
+            SET project_ref = COALESCE(npd_project_ref, '')
+            WHERE COALESCE(project_ref, '') = ''
+            """
+        )
+
+
 def init_db() -> None:
     should_seed = not DB_PATH.exists()
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        migrate_db(conn)
         if not should_seed:
             return
         conn.executemany(
             """
-            INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, npd_project_ref, notes, status)
+            INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, project_ref, notes, status)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("LOT-24001", "Hydra Protein Bar", 240, "kg", "NPD-ALPHA", "Pilot batch for sensory review", "In Review"),
-                ("LOT-24002", "Sparkling Matcha", 180, "L", "NPD-BETA", "Awaiting dispatch to Delhi customer panel", "Approved"),
+                ("LOT-24001", "Hydra Protein Bar", 240, "kg", "PROJECT-ALPHA", "Pilot batch for sensory review", "In Review"),
+                ("LOT-24002", "Sparkling Matcha", 180, "L", "PROJECT-BETA", "Awaiting dispatch to Delhi customer panel", "Approved"),
             ],
         )
         conn.executemany(
@@ -475,7 +492,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 cur = conn.execute(
                     """
-                    INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, npd_project_ref, notes, status)
+                    INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, project_ref, notes, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -483,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
                         str(body["product_name"]).strip(),
                         float(body["initial_quantity"]),
                         str(body["unit_measure"]).strip(),
-                        str(body.get("npd_project_ref", "")).strip(),
+                        str(body.get("project_ref") or body.get("npd_project_ref") or "").strip(),
                         str(body.get("notes", "")).strip(),
                         str(body.get("status", "Draft")).strip() or "Draft",
                     ),
@@ -578,4 +595,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

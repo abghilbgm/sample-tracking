@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS lots (
   product_name TEXT NOT NULL,
   initial_quantity REAL NOT NULL CHECK(initial_quantity >= 0),
   unit_measure TEXT NOT NULL,
-  npd_project_ref TEXT DEFAULT '',
+  project_ref TEXT DEFAULT '',
   notes TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'Draft',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -103,6 +103,7 @@ def init_db() -> None:
     should_seed = not DB_PATH.exists()
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        migrate_db(conn)
         if should_seed and should_seed_demo_data() and SEED:
             for sql, rows in SEED:
                 conn.executemany(sql, rows)
@@ -115,6 +116,22 @@ def query_all(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[di
 def query_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict | None:
     row = conn.execute(sql, params).fetchone()
     return dict(row) if row else None
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(lots)").fetchall()}
+    has_legacy = "npd_project_ref" in columns
+    if "project_ref" not in columns and has_legacy:
+        conn.execute("ALTER TABLE lots ADD COLUMN project_ref TEXT DEFAULT ''")
+        columns.add("project_ref")
+    if "project_ref" in columns and has_legacy:
+        conn.execute(
+            """
+            UPDATE lots
+            SET project_ref = COALESCE(npd_project_ref, '')
+            WHERE COALESCE(project_ref, '') = ''
+            """
+        )
 
 
 def normalize_role(value: str | None) -> str:
@@ -304,7 +321,15 @@ class AppHandler(BaseHTTPRequestHandler):
                     conn,
                     """
                     SELECT
-                      l.*,
+                      l.id,
+                      l.lot_number,
+                      l.product_name,
+                      l.initial_quantity,
+                      l.unit_measure,
+                      l.project_ref,
+                      l.notes,
+                      l.status,
+                      l.created_at,
                       COALESCE(COUNT(DISTINCT a.id), 0) AS analysis_count,
                       COALESCE(COUNT(DISTINCT d.id), 0) AS shipment_count
                     FROM lots l
@@ -316,7 +341,21 @@ class AppHandler(BaseHTTPRequestHandler):
                 ) if can_access(role, "quality") else []
                 inventory = query_all(
                     conn,
-                    "SELECT * FROM lots WHERE status != 'Closed' ORDER BY datetime(created_at) DESC",
+                    """
+                    SELECT
+                      id,
+                      lot_number,
+                      product_name,
+                      initial_quantity,
+                      unit_measure,
+                      project_ref,
+                      notes,
+                      status,
+                      created_at
+                    FROM lots
+                    WHERE status != 'Closed'
+                    ORDER BY datetime(created_at) DESC
+                    """,
                 ) if can_access(role, "logistics") else []
                 marketing = query_all(
                     conn,
@@ -441,9 +480,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 if missing:
                     self.send_json({"error": f"Missing fields: {', '.join(missing)}"}, HTTPStatus.BAD_REQUEST)
                     return
+                project_ref = str(body.get("project_ref") or "").strip()
                 cursor = conn.execute(
                     """
-                    INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, npd_project_ref, notes, status)
+                    INSERT INTO lots (lot_number, product_name, initial_quantity, unit_measure, project_ref, notes, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -451,12 +491,29 @@ class AppHandler(BaseHTTPRequestHandler):
                         body["product_name"].strip(),
                         float(body["initial_quantity"]),
                         body["unit_measure"].strip(),
-                        body.get("npd_project_ref", "").strip(),
+                        project_ref,
                         body.get("notes", "").strip(),
                         body.get("status", "Draft").strip() or "Draft",
                     ),
                 )
-                record = query_one(conn, "SELECT * FROM lots WHERE id = ?", (cursor.lastrowid,))
+                record = query_one(
+                    conn,
+                    """
+                    SELECT
+                      id,
+                      lot_number,
+                      product_name,
+                      initial_quantity,
+                      unit_measure,
+                      project_ref,
+                      notes,
+                      status,
+                      created_at
+                    FROM lots
+                    WHERE id = ?
+                    """,
+                    (cursor.lastrowid,),
+                )
                 self.send_json(record or {}, HTTPStatus.CREATED)
                 return
 

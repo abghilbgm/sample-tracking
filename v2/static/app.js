@@ -132,7 +132,7 @@
         { label: "Lot", key: "lot_number" },
         { label: "Product", key: "product_name" },
         { label: "Status", render: (r) => statusBadge(r.status) },
-        { label: "Project", key: "npd_project_ref" },
+        { label: "Project", key: "project_ref" },
         { label: "Created", render: (r) => new Date(r.created_at).toLocaleDateString() },
       ], state.dashboard.inventory, { selectedId: state.selectedInventoryLotId, onSelect: selectInventoryLot });
     }

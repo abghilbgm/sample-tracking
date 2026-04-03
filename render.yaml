@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: npd-sample-tracking
+    name: sample-tracking
     env: docker
     plan: free
     autoDeploy: true
@@ -11,4 +11,3 @@ services:
     envVars:
       - key: SAMPLE_TRACKING_DB_PATH
         value: /var/data/sample_tracking.db
-
