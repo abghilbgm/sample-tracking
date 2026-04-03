@@ -4,5 +4,4 @@
 //
 // When the UI is served by `server.py` (local/dev or Railway), leave this empty
 // to use same-origin requests.
-window.API_BASE_URL = "";
-
+window.API_BASE_URL = "https://npd-sample-tracking-production.up.railway.app";
