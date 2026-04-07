@@ -17,7 +17,7 @@
           </div>
         </div>
         <div class="access-controls">
-          <div class="topbar-note">Operations</div>
+          <button class="ghost" id="operations-button" title="Go to Operations Report"> Reports </button>
           <div class="session-badge" id="session-badge"></div>
           <button type="button" class="ghost" id="logout-button">Logout</button>
         </div>
@@ -67,18 +67,19 @@
       <div class="zone-divider"></div>
 
       <section class="panel" id="panel-logistics">
-        <div class="panel-head">
-          <div>
-            <p class="panel-label">Logistics</p>
-            <h2> Logistics Shipment </h2>
-          </div>
-          <button data-open-modal="dispatch-modal" id="dispatch-trigger" disabled>Create Shipment</button>
-        </div>
+	        <div class="panel-head">
+	          <div>
+	            <p class="panel-label">Logistics</p>
+	            <h2> Logistics Shipment </h2>
+	          </div>
+	          <button data-open-modal="lot-modal" id="logistics-create-lot">Create Lot</button>
+	          <button data-open-modal="dispatch-modal" id="dispatch-trigger" disabled>Create Shipment</button>
+	        </div>
         <div class="grid two">
           <div id="inventory-table"></div>
           <div class="card">
             <div class="card-head">
-              <h3>Shipments for selected lot</h3>
+              <h2>Shipments for selected lot</h2>
             </div>
             <div id="dispatch-context" class="context">Select a lot in inventory to manage dispatches.</div>
             <div id="dispatches-table"></div>
@@ -88,19 +89,31 @@
 
       <div class="zone-divider"></div>
 
-      <section class="panel" id="panel-marketing">
-        <div class="panel-head">
-          <div>
-            <p class="panel-label">Marketing</p>
-            <h2>Delivered samples and Customer feedback</h2>
-          </div>
-          <button data-open-modal="feedback-modal" id="feedback-trigger" disabled>Add Feedback</button>
-        </div>
+	      <section class="panel" id="panel-marketing">
+	        <div class="panel-head">
+	          <div>
+	            <p class="panel-label">Marketing</p>
+	            <h2>Delivered samples and Customer feedback</h2>
+	          </div>
+	          <button data-open-modal="lot-modal" id="marketing-create-lot">Create Lot</button>
+	          <button data-open-modal="feedback-modal" id="feedback-trigger" disabled>Add Feedback</button>
+	        </div>
         <div class="grid two">
           <div id="marketing-table"></div>
           <div class="card">
             <div class="card-head">
-              <h3>Feedback detail</h3>
+              <h2>Feedback detail</h2>
+                <script>
+                  // Redirect Operations button to report.html
+                  document.addEventListener('DOMContentLoaded', function() {
+                    var opBtn = document.getElementById('operations-button');
+                    if (opBtn) {
+                      opBtn.addEventListener('click', function() {
+                        window.location.href = 'report.html';
+                      });
+                    }
+                  });
+                </script>
             </div>
             <div id="feedback-context" class="context">Select a delivered shipment to review or log feedback.</div>
             <div id="feedback-detail"></div>
@@ -110,13 +123,13 @@
     </div>
 
     <dialog id="lot-modal">
-      <form class="modal-form" id="lot-form" method="dialog">
+      <form class="modal-form" id="lot-form">
         <div class="modal-head">
           <div>
             <p class="panel-label">New lot</p>
             <h3>Create a sample lot</h3>
           </div>
-          <button type="button" class="ghost" data-close-modal>Close</button>
+          <!-- Close button removed, Cancel will be in form footer -->
         </div>
         <div class="form-grid">
           <label>Lot Number<input name="lot_number" required /></label>
@@ -140,18 +153,21 @@
           </label>
           <label class="full">Notes<textarea name="notes"></textarea></label>
         </div>
-        <button type="submit">Save Lot</button>
+        <div class="modal-footer">
+          <button type="submit">Save Lot</button>
+          <button type="button" class="ghost cancel-edit-btn" style="margin-left:16px;">Cancel</button>
+        </div>
       </form>
     </dialog>
 
     <dialog id="analysis-modal">
-      <form class="modal-form" id="analysis-form" method="dialog">
+      <form class="modal-form" id="analysis-form">
         <div class="modal-head">
           <div>
             <p class="panel-label">Quality test</p>
             <h3>Add analysis</h3>
           </div>
-          <button type="button" class="ghost" data-close-modal>Close</button>
+          <!-- Close button removed, Cancel will be in form footer -->
         </div>
         <div class="form-grid">
           <label>Test Type
@@ -168,18 +184,21 @@
           <label>Test Date<input name="test_date" type="date" required /></label>
           <label class="toggle-row"><input name="is_pass" type="checkbox" /> Pass</label>
         </div>
-        <button type="submit">Save Analysis</button>
+        <div class="modal-footer">
+          <button type="submit">Save Analysis</button>
+          <button type="button" class="ghost cancel-edit-btn" style="margin-left:16px;">Cancel</button>
+        </div>
       </form>
     </dialog>
 
     <dialog id="dispatch-modal">
-      <form class="modal-form" id="dispatch-form" method="dialog">
+      <form class="modal-form" id="dispatch-form">
         <div class="modal-head">
           <div>
             <p class="panel-label">Shipment</p>
             <h3>Create dispatch</h3>
           </div>
-          <button type="button" class="ghost" data-close-modal>Close</button>
+          <!-- Close button removed, Cancel will be in form footer -->
         </div>
         <div class="form-grid">
           <label>Customer<input name="customer_name" required /></label>
@@ -188,18 +207,21 @@
           <label>AWB / Tracking<input name="awb_number" required /></label>
           <label>Dispatch Date<input name="dispatch_date" type="date" required /></label>
         </div>
-        <button type="submit">Save Shipment</button>
+        <div class="modal-footer">
+          <button type="submit">Save Shipment</button>
+          <button type="button" class="ghost cancel-edit-btn" style="margin-left:16px;">Cancel</button>
+        </div>
       </form>
     </dialog>
 
     <dialog id="feedback-modal">
-      <form class="modal-form" id="feedback-form" method="dialog">
+      <form class="modal-form" id="feedback-form">
         <div class="modal-head">
           <div>
             <p class="panel-label">Market response</p>
             <h3>Add customer feedback</h3>
           </div>
-          <button type="button" class="ghost" data-close-modal>Close</button>
+          <!-- Close button removed, Cancel will be in form footer -->
         </div>
         <div class="form-grid">
           <label>Rating<input name="rating" type="number" min="0" max="5" step="0.5" required /></label>
@@ -208,11 +230,14 @@
           <label class="full">Technical Notes<textarea name="technical_notes" required></textarea></label>
           <label class="full">Next Steps<textarea name="next_steps"></textarea></label>
         </div>
-        <button type="submit">Save Feedback</button>
+        <div class="modal-footer">
+          <button type="submit">Save Feedback</button>
+          <button type="button" class="ghost cancel-edit-btn" style="margin-left:16px;">Cancel</button>
+        </div>
       </form>
     </dialog>
 
     <script src="config.js"></script>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=10"></script>
   </body>
 </html>

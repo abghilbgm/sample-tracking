@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
+import traceback
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -92,6 +94,17 @@ def now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+def debug_enabled() -> bool:
+    value = (os.getenv("DEBUG") or "").strip().lower()
+    return value in {"1", "true", "yes", "y", "on"}
+
+
+def log_debug(message: str) -> None:
+    if not debug_enabled():
+        return
+    print(f"[{now_iso()}] {message}", file=sys.stderr, flush=True)
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -141,16 +154,73 @@ def normalize_role(value: str | None) -> str:
 
 def can_access(role: str, zone: str) -> bool:
     permissions = {
-        "admin": {"quality", "logistics", "marketing"},
-        "quality": {"quality"},
-        "logistics": {"logistics"},
-        "marketing": {"marketing"},
+        # `lots` is a shared capability: creating/editing/deleting lots is needed
+        # by Logistics (inventory) and Marketing (feedback context), not only Quality.
+        "admin": {"quality", "logistics", "marketing", "lots"},
+        "quality": {"quality", "lots"},
+        "logistics": {"logistics", "lots"},
+        "marketing": {"marketing", "lots"},
     }
     return zone in permissions.get(role, set())
 
 
+
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "SampleTracking/1.0"
+
+    def _send_internal_error(self, error: BaseException) -> None:
+        log_debug(f"ERROR {getattr(self, 'command', '?')} {getattr(self, 'path', '?')} :: {error!r}")
+        if debug_enabled():
+            log_debug(traceback.format_exc())
+        payload: dict[str, str] = {"error": "Internal server error"}
+        if debug_enabled():
+            payload["detail"] = traceback.format_exc()[-4000:]
+        try:
+            self.send_json(payload, HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception:
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_DELETE(self) -> None:
+        try:
+            parsed = urlparse(self.path)
+            if not parsed.path.startswith("/api/"):
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            if not self.require_auth():
+                return
+            log_debug(f"REQ DELETE {parsed.path} origin={self.headers.get('Origin','')}")
+            self.handle_api_delete(parsed.path)
+        except Exception as e:
+            self._send_internal_error(e)
+
+    def handle_api_delete(self, path: str) -> None:
+        # /api/lots/<id>
+        # /api/analyses/<id>
+        # /api/dispatches/<id>
+        # /api/feedback/<id>
+        import re
+        m = re.match(r"/api/(lots|analyses|dispatches|feedback)/(\d+)", path)
+        if not m:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        table, row_id = m.group(1), int(m.group(2))
+        # Role-based access control
+        role_map = {
+            "lots": "lots",
+            "analyses": "quality",
+            "dispatches": "logistics",
+            "feedback": "marketing",
+        }
+        zone = role_map.get(table)
+        if not self.require_zone(zone):
+            return
+        with get_connection() as conn:
+            cur = conn.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
+            if cur.rowcount == 0:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.end_headers()
 
     def end_headers(self) -> None:
         self.maybe_add_cors_headers()
@@ -159,7 +229,21 @@ class AppHandler(BaseHTTPRequestHandler):
     def maybe_add_cors_headers(self) -> None:
         allowed = (os.getenv("CORS_ALLOW_ORIGINS") or "").strip()
         origin = (self.headers.get("Origin") or "").strip()
-        if not allowed or not origin:
+        if not origin:
+            return
+
+        # Dev-friendly default: when running locally with the UI served from a
+        # different port (e.g. `python3 -m http.server`), allow localhost/127.0.0.1
+        # origins without requiring `CORS_ALLOW_ORIGINS`.
+        if not allowed and origin.startswith(("http://127.0.0.1:", "http://localhost:")):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
+            self.send_header("Access-Control-Max-Age", "600")
+            return
+
+        if not allowed:
             return
 
         if allowed == "*":
@@ -187,13 +271,17 @@ class AppHandler(BaseHTTPRequestHandler):
         return SESSIONS.get(token)
 
     def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path.startswith("/api/"):
-            if not self.require_auth():
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path.startswith("/api/"):
+                if not self.require_auth():
+                    return
+                log_debug(f"REQ GET {parsed.path} origin={self.headers.get('Origin','')}")
+                self.handle_api_get(parsed)
                 return
-            self.handle_api_get(parsed)
-            return
-        self.serve_static(parsed.path)
+            self.serve_static(parsed.path)
+        except Exception as e:
+            self._send_internal_error(e)
 
     def do_HEAD(self) -> None:
         parsed = urlparse(self.path)
@@ -207,28 +295,36 @@ class AppHandler(BaseHTTPRequestHandler):
         self.serve_static(parsed.path, head_only=True)
 
     def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if not parsed.path.startswith("/api/"):
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        body = self.read_json()
-        if body is None:
-            return
-        if parsed.path not in {"/api/login"} and not self.require_auth():
-            return
-        self.handle_api_post(parsed.path, body)
+        try:
+            parsed = urlparse(self.path)
+            if not parsed.path.startswith("/api/"):
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            body = self.read_json()
+            if body is None:
+                return
+            if parsed.path not in {"/api/login"} and not self.require_auth():
+                return
+            log_debug(f"REQ POST {parsed.path} origin={self.headers.get('Origin','')}")
+            self.handle_api_post(parsed.path, body)
+        except Exception as e:
+            self._send_internal_error(e)
 
     def do_PATCH(self) -> None:
-        parsed = urlparse(self.path)
-        if not parsed.path.startswith("/api/"):
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        body = self.read_json()
-        if body is None:
-            return
-        if not self.require_auth():
-            return
-        self.handle_api_patch(parsed.path, body)
+        try:
+            parsed = urlparse(self.path)
+            if not parsed.path.startswith("/api/"):
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            body = self.read_json()
+            if body is None:
+                return
+            if not self.require_auth():
+                return
+            log_debug(f"REQ PATCH {parsed.path} origin={self.headers.get('Origin','')}")
+            self.handle_api_patch(parsed.path, body)
+        except Exception as e:
+            self._send_internal_error(e)
 
     def do_OPTIONS(self) -> None:
         parsed = urlparse(self.path)
@@ -300,7 +396,11 @@ class AppHandler(BaseHTTPRequestHandler):
     def handle_api_get(self, parsed) -> None:
         qs = parse_qs(parsed.query)
         role = self.current_role
+        import re
         with get_connection() as conn:
+            if parsed.path == "/api/health":
+                self.send_json({"ok": True, "time": now_iso()})
+                return
             if parsed.path == "/api/session":
                 user = self.current_user
                 self.send_json(
@@ -434,12 +534,63 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json(data or {})
                 return
 
+            if parsed.path == "/api/report":
+                # Report accessible to all authenticated users
+                data = query_all(
+                    conn,
+                    """
+                    SELECT
+                      d.id AS dispatch_id,
+                      d.dispatch_date AS sample_requisition_date,
+                      d.customer_name,
+                      l.lot_number,
+                      l.product_name,
+                      l.initial_quantity,
+                      l.unit_measure,
+                      d.quantity_sent,
+                      d.dispatch_date,
+                      d.delivery_status AS status,
+                      d.courier_name,
+                      d.awb_number,
+                      f.rating,
+                      f.technical_notes,
+                      f.action_required,
+                      l.created_at
+                    FROM dispatches d
+                    JOIN lots l ON l.id = d.lot_id
+                    LEFT JOIN feedback f ON f.dispatch_id = d.id
+                    ORDER BY date(d.dispatch_date) DESC, d.id DESC
+                    """
+                )
+                self.send_json(data)
+                return
+
+            m = re.match(r"^/api/(lots|analyses|dispatches|feedback)/(\d+)$", parsed.path)
+            if m:
+                table, row_id = m.group(1), int(m.group(2))
+                role_map = {
+                    "lots": "lots",
+                    "analyses": "quality",
+                    "dispatches": "logistics",
+                    "feedback": "marketing",
+                }
+                zone = role_map.get(table)
+                if zone and not self.require_zone(zone):
+                    return
+                record = query_one(conn, f"SELECT * FROM {table} WHERE id = ?", (row_id,))
+                if not record:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self.send_json(record)
+                return
+
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def handle_api_post(self, path: str, body: dict) -> None:
         if path == "/api/login":
             username = (body.get("username") or "").strip().lower()
             password = body.get("password") or ""
+            log_debug(f"LOGIN attempt username={username}")
             user = USERS.get(username)
             if not user or user["password"] != password:
                 self.send_json({"error": "Invalid username or password"}, HTTPStatus.UNAUTHORIZED)
@@ -473,7 +624,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         with get_connection() as conn:
             if path == "/api/lots":
-                if not self.require_zone("quality"):
+                if not self.require_zone("lots"):
                     return
                 required = ["lot_number", "product_name", "initial_quantity", "unit_measure"]
                 missing = [field for field in required if str(body.get(field, "")).strip() == ""]
@@ -585,18 +736,171 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def handle_api_patch(self, path: str, body: dict) -> None:
-        if path != "/api/dispatch-status":
+        import re
+        if path == "/api/dispatch-status":
+            if not self.require_zone("logistics"):
+                return
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE dispatches SET delivery_status = ? WHERE id = ?",
+                    (body["delivery_status"].strip(), int(body["dispatch_id"])),
+                )
+                record = query_one(conn, "SELECT * FROM dispatches WHERE id = ?", (int(body["dispatch_id"]),))
+                self.send_json(record or {})
+            return
+
+        m = re.match(r"^/api/(lots|analyses|dispatches|feedback)/(\d+)$", path)
+        if not m:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        if not self.require_zone("logistics"):
+
+        table, row_id = m.group(1), int(m.group(2))
+        role_map = {
+            "lots": "lots",
+            "analyses": "quality",
+            "dispatches": "logistics",
+            "feedback": "marketing",
+        }
+        zone = role_map.get(table)
+        if zone and not self.require_zone(zone):
             return
+
         with get_connection() as conn:
-            conn.execute(
-                "UPDATE dispatches SET delivery_status = ? WHERE id = ?",
-                (body["delivery_status"].strip(), int(body["dispatch_id"])),
-            )
-            record = query_one(conn, "SELECT * FROM dispatches WHERE id = ?", (int(body["dispatch_id"]),))
-            self.send_json(record or {})
+            existing = query_one(conn, f"SELECT * FROM {table} WHERE id = ?", (row_id,))
+            if not existing:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+
+            if table == "lots":
+                updates: dict[str, object] = {}
+                if "lot_number" in body:
+                    value = str(body.get("lot_number") or "").strip()
+                    if not value:
+                        self.send_json({"error": "lot_number cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["lot_number"] = value
+                if "product_name" in body:
+                    value = str(body.get("product_name") or "").strip()
+                    if not value:
+                        self.send_json({"error": "product_name cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["product_name"] = value
+                if "initial_quantity" in body:
+                    try:
+                        updates["initial_quantity"] = float(body.get("initial_quantity"))
+                    except (TypeError, ValueError):
+                        self.send_json({"error": "initial_quantity must be a number"}, HTTPStatus.BAD_REQUEST)
+                        return
+                if "unit_measure" in body:
+                    value = str(body.get("unit_measure") or "").strip()
+                    if not value:
+                        self.send_json({"error": "unit_measure cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["unit_measure"] = value
+                if "project_ref" in body:
+                    updates["project_ref"] = str(body.get("project_ref") or "").strip()
+                if "notes" in body:
+                    updates["notes"] = str(body.get("notes") or "").strip()
+                if "status" in body:
+                    value = str(body.get("status") or "").strip()
+                    if not value:
+                        self.send_json({"error": "status cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["status"] = value
+
+                if not updates:
+                    self.send_json(existing)
+                    return
+
+                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                params = tuple(updates.values()) + (row_id,)
+                try:
+                    conn.execute(f"UPDATE lots SET {set_clause} WHERE id = ?", params)
+                except sqlite3.IntegrityError as e:
+                    self.send_json({"error": str(e)}, HTTPStatus.BAD_REQUEST)
+                    return
+                record = query_one(conn, "SELECT * FROM lots WHERE id = ?", (row_id,))
+                self.send_json(record or {})
+                return
+
+            if table == "analyses":
+                updates: dict[str, object] = {}
+                for key in ("test_type", "spec_value", "result_value", "analyst_name", "test_date"):
+                    if key in body:
+                        value = str(body.get(key) or "").strip()
+                        if not value:
+                            self.send_json({"error": f"{key} cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                            return
+                        updates[key] = value
+                if "is_pass" in body:
+                    updates["is_pass"] = 1 if body.get("is_pass") else 0
+                if not updates:
+                    self.send_json(existing)
+                    return
+                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                params = tuple(updates.values()) + (row_id,)
+                conn.execute(f"UPDATE analyses SET {set_clause} WHERE id = ?", params)
+                record = query_one(conn, "SELECT * FROM analyses WHERE id = ?", (row_id,))
+                self.send_json(record or {})
+                return
+
+            if table == "dispatches":
+                updates: dict[str, object] = {}
+                for key in ("customer_name", "courier_name", "awb_number", "dispatch_date"):
+                    if key in body:
+                        value = str(body.get(key) or "").strip()
+                        if not value:
+                            self.send_json({"error": f"{key} cannot be empty"}, HTTPStatus.BAD_REQUEST)
+                            return
+                        updates[key] = value
+                if "quantity_sent" in body:
+                    try:
+                        quantity = float(body.get("quantity_sent"))
+                    except (TypeError, ValueError):
+                        self.send_json({"error": "quantity_sent must be a number"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    if quantity <= 0:
+                        self.send_json({"error": "quantity_sent must be > 0"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["quantity_sent"] = quantity
+                if not updates:
+                    self.send_json(existing)
+                    return
+                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                params = tuple(updates.values()) + (row_id,)
+                conn.execute(f"UPDATE dispatches SET {set_clause} WHERE id = ?", params)
+                record = query_one(conn, "SELECT * FROM dispatches WHERE id = ?", (row_id,))
+                self.send_json(record or {})
+                return
+
+            if table == "feedback":
+                updates: dict[str, object] = {}
+                for key in ("technical_notes", "next_steps", "marketing_person", "feedback_date"):
+                    if key in body:
+                        updates[key] = str(body.get(key) or "").strip()
+                if "rating" in body:
+                    try:
+                        rating = float(body.get("rating"))
+                    except (TypeError, ValueError):
+                        self.send_json({"error": "rating must be a number"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    if rating < 0 or rating > 5:
+                        self.send_json({"error": "rating must be between 0 and 5"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    updates["rating"] = rating
+                if "action_required" in body:
+                    updates["action_required"] = 1 if body.get("action_required") else 0
+                if not updates:
+                    self.send_json(existing)
+                    return
+                set_clause = ", ".join([f"{col} = ?" for col in updates.keys()])
+                params = tuple(updates.values()) + (row_id,)
+                conn.execute(f"UPDATE feedback SET {set_clause} WHERE id = ?", params)
+                record = query_one(conn, "SELECT * FROM feedback WHERE id = ?", (row_id,))
+                self.send_json(record or {})
+                return
+
+        self.send_error(HTTPStatus.NOT_FOUND)
 
 
 def main() -> None:

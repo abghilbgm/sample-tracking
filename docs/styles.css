@@ -1,3 +1,37 @@
+/* Action buttons in tables */
+.table-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+.table-actions button {
+  padding: 7px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  box-shadow: none;
+  background: var(--surface2);
+  color: var(--accent2);
+  border: 1px solid var(--line2);
+  font-weight: 700;
+  letter-spacing: .02em;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.table-actions button:hover {
+  background: var(--accent2);
+  color: #fff;
+  border-color: var(--accent2);
+}
+.table-actions .delete-lot-btn, .table-actions .delete-analysis-btn {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: #fff0f0;
+}
+.table-actions .delete-lot-btn:hover, .table-actions .delete-analysis-btn:hover {
+  background: var(--bad);
+  color: #fff;
+  border-color: var(--bad);
+}
 :root{
   --bg:#ffffff;
   --surface:#ffffff;
