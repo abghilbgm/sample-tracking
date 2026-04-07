@@ -12,6 +12,7 @@ __pycache__/
 # App data (do not commit real data)
 sample_tracking.db
 *.db
+*.db.bak
 
 # Logs
 *.log
