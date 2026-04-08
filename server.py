@@ -292,7 +292,8 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             parsed = urlparse(self.path)
             if parsed.path.startswith("/api/"):
-                if not self.require_auth():
+                # Allow basic health checks without auth (useful for deployment verification).
+                if parsed.path != "/api/health" and not self.require_auth():
                     return
                 log_debug(f"REQ GET {parsed.path} origin={self.headers.get('Origin','')}")
                 self.handle_api_get(parsed)
@@ -441,6 +442,10 @@ class AppHandler(BaseHTTPRequestHandler):
                             "pid": os.getpid(),
                         },
                         "db_path": str(DB_PATH),
+                        "features": {
+                            "post_method_override_header": True,
+                            "post_method_override_json": True,
+                        },
                     }
                 )
                 return
