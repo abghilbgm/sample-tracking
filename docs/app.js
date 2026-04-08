@@ -39,16 +39,21 @@ function loginUrl() {
 async function api(path, options = {}) {
   const url = resolveApiUrl(path);
   const method = (options.method || "GET").toUpperCase();
-  let response;
-  try {
-    response = await fetch(url, {
+  async function request(requestMethod, requestOptions) {
+    return fetch(url, {
       headers: {
         "Content-Type": "application/json",
         ...(state.token ? { "X-Auth-Token": state.token } : {}),
-        ...(options.headers || {}),
+        ...(requestOptions.headers || {}),
       },
-      ...options,
+      ...requestOptions,
+      method: requestMethod,
     });
+  }
+
+  let response;
+  try {
+    response = await request(method, options);
   } catch (error) {
     const base = API_BASE_URL || "(same origin)";
     const hint = API_BASE_URL
@@ -56,6 +61,25 @@ async function api(path, options = {}) {
       : " (Backend not reachable: start it with `python3 server.py` — `python3 -m http.server` won’t handle /api/*.)";
     throw new Error(`Network error: ${error?.message || String(error)} (${method} ${url}, API_BASE_URL=${base})${hint}`);
   }
+
+  if (!response.ok && (method === "PATCH" || method === "DELETE") && (response.status === 404 || response.status === 405 || response.status === 501)) {
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("text/html")) {
+      // Some hosting proxies/backends reject PATCH/DELETE. Retry using a POST with
+      // method override (supported by this backend).
+      const overrideHeaders = {
+        ...(options.headers || {}),
+        "X-HTTP-Method-Override": method,
+      };
+      const retryOptions = {
+        ...options,
+        headers: overrideHeaders,
+        body: options.body ?? "{}",
+      };
+      response = await request("POST", retryOptions);
+    }
+  }
+
   if (!response.ok) {
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
     const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;

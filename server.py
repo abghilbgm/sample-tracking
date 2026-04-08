@@ -257,7 +257,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token, X-HTTP-Method-Override")
             self.send_header("Access-Control-Max-Age", "600")
             return
 
@@ -274,7 +274,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
 
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token, X-HTTP-Method-Override")
         self.send_header("Access-Control-Max-Age", "600")
 
     @property
@@ -321,8 +321,18 @@ class AppHandler(BaseHTTPRequestHandler):
             body = self.read_json()
             if body is None:
                 return
-            if parsed.path not in {"/api/login"} and not self.require_auth():
+            is_login = parsed.path == "/api/login"
+            if not is_login and not self.require_auth():
                 return
+            override = (self.headers.get("X-HTTP-Method-Override") or "").strip().upper()
+            if override and not is_login:
+                log_debug(f"REQ POST override={override} {parsed.path} origin={self.headers.get('Origin','')}")
+                if override == "PATCH":
+                    self.handle_api_patch(parsed.path, body)
+                    return
+                if override == "DELETE":
+                    self.handle_api_delete(parsed.path)
+                    return
             log_debug(f"REQ POST {parsed.path} origin={self.headers.get('Origin','')}")
             self.handle_api_post(parsed.path, body)
         except Exception as e:
