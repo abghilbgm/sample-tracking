@@ -325,7 +325,12 @@ class AppHandler(BaseHTTPRequestHandler):
             if not is_login and not self.require_auth():
                 return
             override = (self.headers.get("X-HTTP-Method-Override") or "").strip().upper()
+            if not override and isinstance(body, dict):
+                override = str(body.get("_method") or body.get("__method") or "").strip().upper()
             if override and not is_login:
+                if isinstance(body, dict):
+                    body.pop("_method", None)
+                    body.pop("__method", None)
                 log_debug(f"REQ POST override={override} {parsed.path} origin={self.headers.get('Origin','')}")
                 if override == "PATCH":
                     self.handle_api_patch(parsed.path, body)

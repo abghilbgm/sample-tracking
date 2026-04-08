@@ -51,9 +51,34 @@ async function api(path, options = {}) {
     });
   }
 
+  function withJsonMethodOverride(originalOptions, targetMethod) {
+    const rawBody = originalOptions.body;
+    let payload = {};
+    if (rawBody != null && String(rawBody).trim() !== "") {
+      try {
+        payload = JSON.parse(String(rawBody));
+      } catch {
+        payload = {};
+      }
+    }
+    payload._method = targetMethod;
+    return {
+      ...originalOptions,
+      method: "POST",
+      body: JSON.stringify(payload),
+    };
+  }
+
   let response;
   try {
-    response = await request(method, options);
+    // For cross-origin deployments (GitHub Pages -> hosted API), some proxies reject
+    // PATCH/DELETE. Use POST + JSON method override up front.
+    if ((method === "PATCH" || method === "DELETE") && API_BASE_URL) {
+      const overrideOptions = withJsonMethodOverride(options, method);
+      response = await request("POST", overrideOptions);
+    } else {
+      response = await request(method, options);
+    }
   } catch (error) {
     const base = API_BASE_URL || "(same origin)";
     const hint = API_BASE_URL
@@ -67,15 +92,7 @@ async function api(path, options = {}) {
     if (contentType.includes("text/html")) {
       // Some hosting proxies/backends reject PATCH/DELETE. Retry using a POST with
       // method override (supported by this backend).
-      const overrideHeaders = {
-        ...(options.headers || {}),
-        "X-HTTP-Method-Override": method,
-      };
-      const retryOptions = {
-        ...options,
-        headers: overrideHeaders,
-        body: options.body ?? "{}",
-      };
+      const retryOptions = withJsonMethodOverride(options, method);
       response = await request("POST", retryOptions);
     }
   }
