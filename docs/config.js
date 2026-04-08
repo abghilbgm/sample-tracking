@@ -17,6 +17,6 @@
   if (window.API_BASE_URL != null && String(window.API_BASE_URL).trim() !== "") return;
   const isGitHubPages = /github\.io$/i.test(location.hostname);
   window.API_BASE_URL = isGitHubPages
-    ? ""
+    ? "https://npd-sample-tracking-production.up.railway.app"
     : "";
 })();
