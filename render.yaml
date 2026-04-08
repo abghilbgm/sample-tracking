@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sample-tracking
+    env: docker
+    plan: free
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: SAMPLE_TRACKING_DB_PATH
+        value: /var/data/sample_tracking.db
