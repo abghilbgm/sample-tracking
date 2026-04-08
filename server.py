@@ -19,9 +19,20 @@ ROOT = Path(__file__).parent
 # `docs/` doubles as the GitHub Pages root and the assets directory for the
 # Python server.
 STATIC_DIR = ROOT / "docs"
-DB_PATH = Path(
-    (os.getenv("SAMPLE_TRACKING_DB_PATH") or os.getenv("DB_PATH") or str(ROOT / "sample_tracking.db")).strip()
-).expanduser()
+DEFAULT_DB_PATH = ROOT / "data" / "sample_tracking.db"
+LEGACY_DB_PATH = ROOT / "sample_tracking.db"
+
+
+def resolve_db_path() -> Path:
+    configured = (os.getenv("SAMPLE_TRACKING_DB_PATH") or os.getenv("DB_PATH") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    if LEGACY_DB_PATH.exists():
+        return LEGACY_DB_PATH
+    return DEFAULT_DB_PATH
+
+
+DB_PATH = resolve_db_path()
 ROLES = {"admin", "quality", "logistics", "marketing"}
 USERS = {
     "admin": {"password": "Admin@123", "role": "admin", "name": "Admin User"},

@@ -29,6 +29,19 @@ Demo users (editable in `server.py`):
 
 The app uses a local SQLite database file: `sample_tracking.db`.
 
+## Deploy (Railway) + GitHub Pages (persistent SQLite)
+
+If you host the UI on GitHub Pages (`/docs`) and the backend on Railway, do this:
+
+1. Create a new Railway project from this GitHub repo (Dockerfile deploy is fine).
+2. Add a Railway **Volume** (persistent disk) and mount it at `/var/data`.
+3. Set Railway environment variables:
+   - `SAMPLE_TRACKING_DB_PATH=/var/data/sample_tracking.db`
+   - `CORS_ALLOW_ORIGINS=https://<your-username>.github.io`
+   - `PORT` is provided by Railway; no change needed
+4. Use **1 replica** (SQLite + in-memory sessions do not work across multiple replicas).
+5. Update `docs/config.js` and set `window.API_BASE_URL` to your Railway backend origin.
+
 ## GitHub Pages (frontend)
 
 GitHub Pages can host only static files (the UI). The backend API + SQLite must

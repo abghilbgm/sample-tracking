@@ -66,7 +66,7 @@ async function api(path, options = {}) {
     const hint = response.status === 404 && String(path).startsWith("/api/") && !API_BASE_URL
       ? " (Hint: start the backend with `python3 server.py` — `python3 -m http.server` won’t serve /api/*.)"
       : needsPersistentBackendHint
-        ? " (Hint: your backend returned 404 for update/delete. If running on Railway with SQLite, use 1 replica + a persistent volume + `SAMPLE_TRACKING_DB_PATH=/data/sample_tracking.db`, then redeploy.)"
+        ? " (Hint: your backend returned 404 for update/delete. If running on Railway with SQLite, use 1 replica + a persistent volume + `SAMPLE_TRACKING_DB_PATH=/var/data/sample_tracking.db`, then redeploy.)"
       : "";
     const message = `${details || `Request failed: ${response.status}`} (${method} ${response.url})${hint}`;
     const error = new Error(message);
