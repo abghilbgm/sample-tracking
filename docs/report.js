@@ -261,7 +261,7 @@ function initializeEventListeners() {
     if (backLink) {
         backLink.addEventListener("click", (e) => {
             e.preventDefault();
-            window.location.href = "/";
+            window.location.href = new URL("./", location.href).toString();
         });
     }
 }
@@ -283,7 +283,7 @@ async function initialize() {
     try {
         // Check if user is authenticated
         if (!reportState.token) {
-            location.href = "/login.html";
+            location.href = new URL("login.html", new URL("./", location.href)).toString();
             return;
         }
 
@@ -293,7 +293,7 @@ async function initialize() {
     } catch (error) {
         console.error("Initialization error:", error);
         if (error.message.includes("401") || error.message.includes("Authentication")) {
-            location.href = "/login.html";
+            location.href = new URL("login.html", new URL("./", location.href)).toString();
         } else {
             showEmptyState(`Error: ${error.message}`);
         }
